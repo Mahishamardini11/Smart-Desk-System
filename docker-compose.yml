@@ -1,0 +1,138 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: smartdesk-postgres
+    environment:
+      POSTGRES_DB: smartdesk
+      POSTGRES_USER: smartdesk
+      POSTGRES_PASSWORD: smartdesk123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smartdesk -d smartdesk"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - smartdesk-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: smartdesk-redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - smartdesk-net
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: smartdesk-chromadb
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      CHROMA_SERVER_HOST: 0.0.0.0
+      CHROMA_SERVER_HTTP_PORT: 8000
+      ANONYMIZED_TELEMETRY: "false"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    networks:
+      - smartdesk-net
+
+  smartdesk-ai:
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile
+    container_name: smartdesk-ai
+    ports:
+      - "8000:8000"
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      CHROMA_HOST: chromadb
+      CHROMA_PORT: 8000
+      COLLECTION_NAME: smartdesk_docs
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      chromadb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - smartdesk-net
+
+  smartdesk-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: smartdesk-backend
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/smartdesk
+      SPRING_DATASOURCE_USERNAME: smartdesk
+      SPRING_DATASOURCE_PASSWORD: smartdesk123
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      APP_AI_SERVICE_URL: http://smartdesk-ai:8000
+      APP_JWT_SECRET: smartdesk-super-secret-key-must-be-at-least-256-bits-long-for-hs256
+      APP_UPLOAD_DIR: /app/uploads
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      smartdesk-ai:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - smartdesk-net
+
+  smartdesk-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: smartdesk-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      smartdesk-backend:
+        condition: service_healthy
+    networks:
+      - smartdesk-net
+
+volumes:
+  postgres_data:
+  redis_data:
+  chroma_data:
+  uploads_data:
+
+networks:
+  smartdesk-net:
+    driver: bridge
