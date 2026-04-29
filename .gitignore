@@ -59,3 +59,5 @@ ai-service/venv/
 *.js text eol=lf
 *.jsx text eol=lf
 *.css text eol=lf
+
+./frontend/nginx.config

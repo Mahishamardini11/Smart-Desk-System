@@ -13,7 +13,7 @@ call venv\Scripts\activate.bat
 pip install --upgrade pip -q
 pip install -r requirements.txt -q
 
-echo GEMINI_API_KEY=your_key_here > .env
+echo GEMINI_API_KEY=AIzaSyBj3uuRmRy2dQ8ixn9hV5lZNMPLYLy8f7g > .env
 echo CHROMA_HOST=localhost >> .env
 echo CHROMA_PORT=8001 >> .env
 echo COLLECTION_NAME=smartdesk_docs >> .env
